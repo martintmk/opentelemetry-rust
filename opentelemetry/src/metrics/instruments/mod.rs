@@ -17,7 +17,7 @@ pub(super) mod histogram;
 pub(super) mod up_down_counter;
 
 /// An SDK implemented instrument that records measurements via callback.
-pub trait AsyncInstrument<T>: Send + Sync {
+pub trait AsyncInstrument<T> {
     /// Observes the state of the instrument.
     ///
     /// It is only valid to call this within a callback.
@@ -25,7 +25,7 @@ pub trait AsyncInstrument<T>: Send + Sync {
 }
 
 /// An SDK implemented instrument that records measurements synchronously.
-pub trait SyncInstrument<T>: Send + Sync {
+pub trait SyncInstrument<T> {
     /// Records a measurement synchronously.
     fn measure(&self, measurement: T, attributes: &[KeyValue]);
 }
@@ -238,7 +238,7 @@ impl<T> fmt::Debug for HistogramBuilder<'_, T> {
 /// for these instruments.
 ///
 /// The function needs to complete in a finite amount of time.
-pub type Callback<T> = Box<dyn Fn(&dyn AsyncInstrument<T>) + Send + Sync>;
+pub type Callback<T> = Box<dyn Fn(&dyn AsyncInstrument<T>)>;
 
 /// Configuration for building an async instrument.
 #[non_exhaustive] // We expect to add more configuration fields in the future
@@ -295,7 +295,7 @@ impl<'a, I, M> AsyncInstrumentBuilder<'a, I, M> {
     /// Set the callback to be called for this instrument.
     pub fn with_callback<F>(mut self, callback: F) -> Self
     where
-        F: Fn(&dyn AsyncInstrument<M>) + Send + Sync + 'static,
+        F: Fn(&dyn AsyncInstrument<M>) + 'static,
     {
         self.callbacks.push(Box::new(callback));
         self

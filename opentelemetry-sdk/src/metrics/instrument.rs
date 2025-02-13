@@ -301,7 +301,7 @@ impl<T> Observable<T> {
     }
 }
 
-impl<T: Copy + Send + Sync + 'static> AsyncInstrument<T> for Observable<T> {
+impl<T: Copy + 'static> AsyncInstrument<T> for Observable<T> {
     fn observe(&self, measurement: T, attrs: &[KeyValue]) {
         for measure in &self.measures {
             measure.call(measurement, attrs)

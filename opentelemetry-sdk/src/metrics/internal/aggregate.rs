@@ -2,10 +2,10 @@ use std::{
     marker,
     mem::replace,
     ops::DerefMut,
-    sync::{Arc, Mutex},
+    sync::{Arc},
     time::SystemTime,
 };
-
+use std::cell::RefCell;
 use crate::metrics::{data::Aggregation, Temporality};
 use opentelemetry::time::now;
 use opentelemetry::KeyValue;
@@ -26,13 +26,13 @@ pub(crate) fn is_under_cardinality_limit(_size: usize) -> bool {
 }
 
 /// Receives measurements to be aggregated.
-pub(crate) trait Measure<T>: Send + Sync + 'static {
+pub(crate) trait Measure<T>: 'static {
     fn call(&self, measurement: T, attrs: &[KeyValue]);
 }
 
 /// Stores the aggregate of measurements into the aggregation and returns the number
 /// of aggregate data-points output.
-pub(crate) trait ComputeAggregation: Send + Sync + 'static {
+pub(crate) trait ComputeAggregation: 'static {
     /// Compute the new aggregation and store in `dest`.
     ///
     /// If no initial aggregation exists, `dest` will be `None`, in which case the
@@ -67,25 +67,25 @@ pub(crate) struct AggregateTime {
 }
 
 /// Initialized [`AggregateTime`] for specific [`Temporality`]
-pub(crate) struct AggregateTimeInitiator(Mutex<SystemTime>);
+pub(crate) struct AggregateTimeInitiator(RefCell<SystemTime>);
 
 impl AggregateTimeInitiator {
     pub(crate) fn delta(&self) -> AggregateTime {
         let current_time = now();
-        let start_time = self
+        let mut start_time = self
             .0
-            .lock()
-            .map(|mut start| replace(start.deref_mut(), current_time))
-            .unwrap_or(current_time);
+            .borrow_mut();
+
         AggregateTime {
-            start: start_time,
+            start: replace(start_time.deref_mut(), current_time),
             current: current_time,
         }
     }
 
     pub(crate) fn cumulative(&self) -> AggregateTime {
         let current_time = now();
-        let start_time = self.0.lock().map(|start| *start).unwrap_or(current_time);
+        let start_time = *self.0.borrow_mut();
+
         AggregateTime {
             start: start_time,
             current: current_time,
@@ -95,11 +95,11 @@ impl AggregateTimeInitiator {
 
 impl Default for AggregateTimeInitiator {
     fn default() -> Self {
-        Self(Mutex::new(now()))
+        Self(RefCell::new(now()))
     }
 }
 
-type Filter = Arc<dyn Fn(&KeyValue) -> bool + Send + Sync>;
+type Filter = Arc<dyn Fn(&KeyValue) -> bool>;
 
 /// Applies filter on provided attribute set
 /// No-op, if filter is not set

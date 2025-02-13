@@ -1,5 +1,6 @@
 use crate::KeyValue;
 use core::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use super::SyncInstrument;
@@ -11,7 +12,7 @@ use super::SyncInstrument;
 /// duplicate [`Histogram`]s for the same metric could lower SDK performance.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Histogram<T>(Arc<dyn SyncInstrument<T> + Send + Sync>);
+pub struct Histogram<T>(Rc<dyn SyncInstrument<T>>);
 
 impl<T> fmt::Debug for Histogram<T>
 where
@@ -24,7 +25,7 @@ where
 
 impl<T> Histogram<T> {
     /// Create a new histogram.
-    pub fn new(inner: Arc<dyn SyncInstrument<T> + Send + Sync>) -> Self {
+    pub fn new(inner: Rc<dyn SyncInstrument<T>>) -> Self {
         Histogram(inner)
     }
 

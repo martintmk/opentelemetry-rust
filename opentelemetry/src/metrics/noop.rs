@@ -3,11 +3,12 @@
 //! This implementation is returned as the global Meter if no `MeterProvider`
 //! has been set. It is expected to have minimal resource utilization and
 //! runtime impact.
+
+use std::rc::Rc;
 use crate::{
     metrics::{InstrumentProvider, Meter, MeterProvider},
     otel_debug, KeyValue,
 };
-use std::sync::Arc;
 
 use super::instruments::SyncInstrument;
 
@@ -27,7 +28,7 @@ impl NoopMeterProvider {
 impl MeterProvider for NoopMeterProvider {
     fn meter_with_scope(&self, scope: crate::InstrumentationScope) -> Meter {
         otel_debug!(name: "NoopMeterProvider.MeterCreation", meter_name = scope.name(), message = "Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.");
-        Meter::new(Arc::new(NoopMeter::new()))
+        Meter::new(Rc::new(NoopMeter::new()))
     }
 }
 

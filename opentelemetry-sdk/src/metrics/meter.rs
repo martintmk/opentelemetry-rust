@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use core::fmt;
 use std::{borrow::Cow, sync::Arc};
-
+use std::rc::Rc;
 use opentelemetry::{
     metrics::{
         AsyncInstrumentBuilder, Counter, Gauge, Histogram, HistogramBuilder, InstrumentBuilder,
@@ -50,21 +50,21 @@ const INSTRUMENT_UNIT_INVALID_CHAR: &str = "characters in instrument unit must b
 /// [Meter API]: opentelemetry::metrics::Meter
 pub(crate) struct SdkMeter {
     scope: InstrumentationScope,
-    pipes: Arc<Pipelines>,
+    pipes: Rc<Pipelines>,
     u64_resolver: Resolver<u64>,
     i64_resolver: Resolver<i64>,
     f64_resolver: Resolver<f64>,
 }
 
 impl SdkMeter {
-    pub(crate) fn new(scope: InstrumentationScope, pipes: Arc<Pipelines>) -> Self {
+    pub(crate) fn new(scope: InstrumentationScope, pipes: Rc<Pipelines>) -> Self {
         let view_cache = Default::default();
 
         SdkMeter {
             scope,
-            pipes: Arc::clone(&pipes),
-            u64_resolver: Resolver::new(Arc::clone(&pipes), Arc::clone(&view_cache)),
-            i64_resolver: Resolver::new(Arc::clone(&pipes), Arc::clone(&view_cache)),
+            pipes: Rc::clone(&pipes),
+            u64_resolver: Resolver::new(Rc::clone(&pipes), Rc::clone(&view_cache)),
+            i64_resolver: Resolver::new(Rc::clone(&pipes), Rc::clone(&view_cache)),
             f64_resolver: Resolver::new(pipes, view_cache),
         }
     }
@@ -86,7 +86,7 @@ impl SdkMeter {
                 message = "Measurements from this Counter will be ignored.",
                 reason = format!("{}", err)
             );
-            return Counter::new(Arc::new(NoopSyncInstrument::new()));
+            return Counter::new(Rc::new(NoopSyncInstrument::new()));
         }
 
         match resolver
@@ -97,7 +97,7 @@ impl SdkMeter {
                 builder.unit,
                 None,
             )
-            .map(|i| Counter::new(Arc::new(i)))
+            .map(|i| Counter::new(Rc::new(i)))
         {
             Ok(counter) => counter,
             Err(err) => {
@@ -108,7 +108,7 @@ impl SdkMeter {
                     message = "Measurements from this Counter will be ignored.",
                     reason = format!("{}", err)
                 );
-                Counter::new(Arc::new(NoopSyncInstrument::new()))
+                Counter::new(Rc::new(NoopSyncInstrument::new()))
             }
         }
     }
@@ -307,7 +307,7 @@ impl SdkMeter {
                 message = "Measurements from this UpDownCounter will be ignored.",
                 reason = format!("{}", err)
             );
-            return UpDownCounter::new(Arc::new(NoopSyncInstrument::new()));
+            return UpDownCounter::new(Rc::new(NoopSyncInstrument::new()));
         }
 
         match resolver
@@ -318,7 +318,7 @@ impl SdkMeter {
                 builder.unit,
                 None,
             )
-            .map(|i| UpDownCounter::new(Arc::new(i)))
+            .map(|i| UpDownCounter::new(Rc::new(i)))
         {
             Ok(updown_counter) => updown_counter,
             Err(err) => {
@@ -329,7 +329,7 @@ impl SdkMeter {
                     message = "Measurements from this UpDownCounter will be ignored.",
                     reason = format!("{}", err)
                 );
-                UpDownCounter::new(Arc::new(NoopSyncInstrument::new()))
+                UpDownCounter::new(Rc::new(NoopSyncInstrument::new()))
             }
         }
     }
@@ -351,7 +351,7 @@ impl SdkMeter {
                 message = "Measurements from this Gauge will be ignored.",
                 reason = format!("{}", err)
             );
-            return Gauge::new(Arc::new(NoopSyncInstrument::new()));
+            return Gauge::new(Rc::new(NoopSyncInstrument::new()));
         }
 
         match resolver
@@ -362,7 +362,7 @@ impl SdkMeter {
                 builder.unit,
                 None,
             )
-            .map(|i| Gauge::new(Arc::new(i)))
+            .map(|i| Gauge::new(Rc::new(i)))
         {
             Ok(gauge) => gauge,
             Err(err) => {
@@ -373,7 +373,7 @@ impl SdkMeter {
                     message = "Measurements from this Gauge will be ignored.",
                     reason = format!("{}", err)
                 );
-                Gauge::new(Arc::new(NoopSyncInstrument::new()))
+                Gauge::new(Rc::new(NoopSyncInstrument::new()))
             }
         }
     }
@@ -395,7 +395,7 @@ impl SdkMeter {
                 message = "Measurements from this Histogram will be ignored.",
                 reason = format!("{}", err)
             );
-            return Histogram::new(Arc::new(NoopSyncInstrument::new()));
+            return Histogram::new(Rc::new(NoopSyncInstrument::new()));
         }
 
         if let Some(ref boundaries) = builder.boundaries {
@@ -411,7 +411,7 @@ impl SdkMeter {
                     message = "Measurements from this Histogram will be ignored.",
                     reason = format!("{}", err)
                 );
-                return Histogram::new(Arc::new(NoopSyncInstrument::new()));
+                return Histogram::new(Rc::new(NoopSyncInstrument::new()));
             }
         }
 
@@ -423,7 +423,7 @@ impl SdkMeter {
                 builder.unit,
                 builder.boundaries,
             )
-            .map(|i| Histogram::new(Arc::new(i)))
+            .map(|i| Histogram::new(Rc::new(i)))
         {
             Ok(histogram) => histogram,
             Err(err) => {
@@ -434,7 +434,7 @@ impl SdkMeter {
                     message = "Measurements from this Histogram will be ignored.",
                     reason = format!("{}", err)
                 );
-                Histogram::new(Arc::new(NoopSyncInstrument::new()))
+                Histogram::new(Rc::new(NoopSyncInstrument::new()))
             }
         }
     }

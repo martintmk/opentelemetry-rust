@@ -1,6 +1,6 @@
 use core::fmt;
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::metrics::{
     AsyncInstrumentBuilder, Gauge, InstrumentBuilder, InstrumentProvider, ObservableCounter,
@@ -41,7 +41,7 @@ pub trait MeterProvider {
     /// # Examples
     ///
     /// ```
-    /// use std::sync::Arc;
+    /// use std::sync::Rc;
     /// use opentelemetry::InstrumentationScope;
     /// use opentelemetry::metrics::MeterProvider;
     /// use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -294,13 +294,13 @@ pub trait MeterProvider {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Meter {
-    pub(crate) instrument_provider: Arc<dyn InstrumentProvider + Send + Sync>,
+    pub(crate) instrument_provider: Rc<dyn InstrumentProvider>,
 }
 
 impl Meter {
     /// Create a new named meter from an instrumentation provider
     #[doc(hidden)]
-    pub fn new(instrument_provider: Arc<dyn InstrumentProvider + Send + Sync>) -> Self {
+    pub fn new(instrument_provider: Rc<dyn InstrumentProvider>) -> Self {
         Meter {
             instrument_provider,
         }

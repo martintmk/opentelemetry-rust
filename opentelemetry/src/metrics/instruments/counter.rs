@@ -1,6 +1,6 @@
 use crate::KeyValue;
 use core::fmt;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use super::SyncInstrument;
 
@@ -11,7 +11,7 @@ use super::SyncInstrument;
 /// duplicate [`Counter`]s for the same metric could lower SDK performance.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Counter<T>(Arc<dyn SyncInstrument<T> + Send + Sync>);
+pub struct Counter<T>(Rc<dyn SyncInstrument<T>>);
 
 impl<T> fmt::Debug for Counter<T>
 where
@@ -24,7 +24,7 @@ where
 
 impl<T> Counter<T> {
     /// Create a new counter.
-    pub fn new(inner: Arc<dyn SyncInstrument<T> + Send + Sync>) -> Self {
+    pub fn new(inner: Rc<dyn SyncInstrument<T>>) -> Self {
         Counter(inner)
     }
 

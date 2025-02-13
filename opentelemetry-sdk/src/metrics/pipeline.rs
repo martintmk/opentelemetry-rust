@@ -4,7 +4,8 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
-
+use std::cell::RefCell;
+use std::rc::Rc;
 use opentelemetry::{otel_debug, InstrumentationScope, KeyValue};
 
 use crate::{
@@ -48,7 +49,7 @@ impl fmt::Debug for Pipeline {
 }
 
 /// Single or multi-instrument callbacks
-type GenericCallback = Arc<dyn Fn() + Send + Sync>;
+type GenericCallback = Arc<dyn Fn()>;
 
 #[derive(Default)]
 struct PipelineInner {
@@ -144,11 +145,13 @@ impl SdkProducer for Pipeline {
                         data: initial_agg,
                     }),
                     // Existing metric can be re-used, update its values
-                    ((len, data), Some(prev_agg)) if len > 0 => {
-                        if let Some(data) = data {
-                            // previous aggregation was of a different type
-                            prev_agg.data = data;
-                        }
+                    ((len, mut data), Some(prev_agg)) if len > 0 => {
+
+                        // if let Some(data) = data {
+                        //
+                        // }
+
+
                         prev_agg.name.clone_from(&inst.name);
                         prev_agg.description.clone_from(&inst.description);
                         prev_agg.unit.clone_from(&inst.unit);
@@ -209,20 +212,20 @@ struct Inserter<T> {
     /// It is provided from the `Meter` that owns this inserter. This cache ensures
     /// that during the creation of instruments with the same name but different
     /// options (e.g. description, unit) a warning message is logged.
-    views: Arc<Mutex<HashMap<Cow<'static, str>, InstrumentId>>>,
+    views: Rc<RefCell<HashMap<Cow<'static, str>, InstrumentId>>>,
 
-    pipeline: Arc<Pipeline>,
+    pipeline: Rc<Pipeline>,
 }
 
 impl<T> Inserter<T>
 where
     T: Number,
 {
-    fn new(p: Arc<Pipeline>, vc: Arc<Mutex<HashMap<Cow<'static, str>, InstrumentId>>>) -> Self {
+    fn new(p: Rc<Pipeline>, vc: Rc<RefCell<HashMap<Cow<'static, str>, InstrumentId>>>) -> Self {
         Inserter {
             aggregators: Default::default(),
             views: vc,
-            pipeline: Arc::clone(&p),
+            pipeline: Rc::clone(&p),
         }
     }
 
@@ -414,24 +417,24 @@ where
     ///
     /// If that instrument conflicts with id, a warning is logged.
     fn log_conflict(&self, id: &InstrumentId) {
-        if let Ok(views) = self.views.lock() {
-            if let Some(existing) = views.get(id.name.to_lowercase().as_str()) {
-                if existing == id {
-                    return;
-                }
-                // If an existing instrument with the same name but different attributes is found,
-                // log a warning with details about the conflicting metric stream definitions.
-                otel_debug!(
-                    name: "Instrument.DuplicateMetricStreamDefinitions",
-                    message = "duplicate metric stream definitions",
-                    reason = format!("names: ({} and {}), descriptions: ({} and {}), kinds: ({:?} and {:?}), units: ({:?} and {:?}), and numbers: ({} and {})",
-                    existing.name, id.name,
-                    existing.description, id.description,
-                    existing.kind, id.kind,
-                    existing.unit, id.unit,
-                    existing.number, id.number,)
-                );
+        let views =  self.views.borrow_mut();
+
+        if let Some(existing) = views.get(id.name.to_lowercase().as_str()) {
+            if existing == id {
+                return;
             }
+            // If an existing instrument with the same name but different attributes is found,
+            // log a warning with details about the conflicting metric stream definitions.
+            otel_debug!(
+                name: "Instrument.DuplicateMetricStreamDefinitions",
+                message = "duplicate metric stream definitions",
+                reason = format!("names: ({} and {}), descriptions: ({} and {}), kinds: ({:?} and {:?}), units: ({:?} and {:?}), and numbers: ({} and {})",
+                existing.name, id.name,
+                existing.description, id.description,
+                existing.kind, id.kind,
+                existing.unit, id.unit,
+                existing.number, id.number,)
+            );
         }
     }
 
@@ -614,7 +617,7 @@ fn is_aggregator_compatible(
 
 /// The group of pipelines connecting Readers with instrument measurement.
 #[derive(Clone, Debug)]
-pub(crate) struct Pipelines(pub(crate) Vec<Arc<Pipeline>>);
+pub(crate) struct Pipelines(pub(crate) Vec<Rc<Pipeline>>);
 
 impl Pipelines {
     pub(crate) fn new(
@@ -624,13 +627,13 @@ impl Pipelines {
     ) -> Self {
         let mut pipes = Vec::with_capacity(readers.len());
         for r in readers {
-            let p = Arc::new(Pipeline {
+            let p = Rc::new(Pipeline {
                 resource: res.clone(),
                 reader: r,
                 views: views.clone(),
                 inner: Default::default(),
             });
-            p.reader.register_pipeline(Arc::downgrade(&p));
+            p.reader.register_pipeline(Rc::downgrade(&p));
             pipes.push(p);
         }
 
@@ -639,7 +642,7 @@ impl Pipelines {
 
     pub(crate) fn register_callback<F>(&self, callback: F)
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn() + 'static,
     {
         let cb = Arc::new(callback);
         for pipe in &self.0 {
@@ -694,13 +697,13 @@ where
     T: Number,
 {
     pub(crate) fn new(
-        pipelines: Arc<Pipelines>,
-        view_cache: Arc<Mutex<HashMap<Cow<'static, str>, InstrumentId>>>,
+        pipelines: Rc<Pipelines>,
+        view_cache: Rc<RefCell<HashMap<Cow<'static, str>, InstrumentId>>>,
     ) -> Self {
         let inserters = pipelines
             .0
             .iter()
-            .map(|pipe| Inserter::new(Arc::clone(pipe), Arc::clone(&view_cache)))
+            .map(|pipe| Inserter::new(Rc::clone(pipe), Rc::clone(&view_cache)))
             .collect();
 
         Resolver { inserters }

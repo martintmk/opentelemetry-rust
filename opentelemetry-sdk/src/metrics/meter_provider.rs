@@ -6,7 +6,8 @@ use std::{
         Arc, Mutex,
     },
 };
-
+use std::cell::RefCell;
+use std::rc::Rc;
 use opentelemetry::{
     metrics::{Meter, MeterProvider},
     otel_debug, otel_error, otel_info, InstrumentationScope,
@@ -32,13 +33,13 @@ use super::{
 /// [Meter]: opentelemetry::metrics::Meter
 #[derive(Clone, Debug)]
 pub struct SdkMeterProvider {
-    inner: Arc<SdkMeterProviderInner>,
+    inner: Rc<SdkMeterProviderInner>,
 }
 
 #[derive(Debug)]
 struct SdkMeterProviderInner {
-    pipes: Arc<Pipelines>,
-    meters: Mutex<HashMap<InstrumentationScope, Arc<SdkMeter>>>,
+    pipes: Rc<Pipelines>,
+    meters: RefCell<HashMap<InstrumentationScope, Rc<SdkMeter>>>,
     shutdown_invoked: AtomicBool,
 }
 
@@ -184,35 +185,30 @@ impl MeterProvider for SdkMeterProvider {
                 name: "MeterProvider.NoOpMeterReturned",
                 meter_name = scope.name(),
             );
-            return Meter::new(Arc::new(NoopMeter::new()));
+            return Meter::new(Rc::new(NoopMeter::new()));
         }
 
         if scope.name().is_empty() {
             otel_info!(name: "MeterNameEmpty", message = "Meter name is empty; consider providing a meaningful name. Meter will function normally and the provided name will be used as-is.");
         };
 
-        if let Ok(mut meters) = self.inner.meters.lock() {
-            if let Some(existing_meter) = meters.get(&scope) {
-                otel_debug!(
+
+        let mut meters = self.inner.meters.borrow_mut();
+
+        if let Some(existing_meter) = meters.get(&scope) {
+            otel_debug!(
                     name: "MeterProvider.ExistingMeterReturned",
                     meter_name = scope.name(),
                 );
-                Meter::new(existing_meter.clone())
-            } else {
-                let new_meter = Arc::new(SdkMeter::new(scope.clone(), self.inner.pipes.clone()));
-                meters.insert(scope.clone(), new_meter.clone());
-                otel_debug!(
+            Meter::new(existing_meter.clone())
+        } else {
+            let new_meter = Rc::new(SdkMeter::new(scope.clone(), self.inner.pipes.clone()));
+            meters.insert(scope.clone(), new_meter.clone());
+            otel_debug!(
                     name: "MeterProvider.NewMeterCreated",
                     meter_name = scope.name(),
                 );
-                Meter::new(new_meter)
-            }
-        } else {
-            otel_debug!(
-                name: "MeterProvider.NoOpMeterReturned",
-                meter_name = scope.name(),
-            );
-            Meter::new(Arc::new(NoopMeter::new()))
+            Meter::new(new_meter)
         }
     }
 }
@@ -292,8 +288,8 @@ impl MeterProviderBuilder {
         );
 
         let meter_provider = SdkMeterProvider {
-            inner: Arc::new(SdkMeterProviderInner {
-                pipes: Arc::new(Pipelines::new(
+            inner: Rc::new(SdkMeterProviderInner {
+                pipes: Rc::new(Pipelines::new(
                     self.resource.unwrap_or(Resource::builder().build()),
                     self.readers,
                     self.views,

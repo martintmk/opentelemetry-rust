@@ -1,5 +1,5 @@
 use std::{f64::consts::LOG2_E, mem::replace, ops::DerefMut, sync::Mutex};
-
+use std::cell::RefCell;
 use opentelemetry::{otel_debug, KeyValue};
 use std::sync::OnceLock;
 
@@ -313,7 +313,7 @@ impl ExpoBuckets {
     }
 }
 
-impl<T> Aggregator for Mutex<ExpoHistogramDataPoint<T>>
+impl<T> Aggregator for RefCell<ExpoHistogramDataPoint<T>>
 where
     T: Number,
 {
@@ -322,21 +322,17 @@ where
     type PreComputedValue = T;
 
     fn create(init: &BucketConfig) -> Self {
-        Mutex::new(ExpoHistogramDataPoint::new(init))
+        RefCell::new(ExpoHistogramDataPoint::new(init))
     }
 
     fn update(&self, value: T) {
-        let mut this = match self.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        this.record(value);
+        self.borrow_mut().record(value);
     }
 
     fn clone_and_reset(&self, init: &BucketConfig) -> Self {
-        let mut current = self.lock().unwrap_or_else(|err| err.into_inner());
+        let mut current = self.borrow_mut();
         let cloned = replace(current.deref_mut(), ExpoHistogramDataPoint::new(init));
-        Mutex::new(cloned)
+        RefCell::new(cloned)
     }
 }
 
@@ -352,7 +348,7 @@ struct BucketConfig {
 /// Each histogram is scoped by attributes and the aggregation cycle the
 /// measurements were made in.
 pub(crate) struct ExpoHistogram<T: Number> {
-    value_map: ValueMap<Mutex<ExpoHistogramDataPoint<T>>>,
+    value_map: ValueMap<RefCell<ExpoHistogramDataPoint<T>>>,
     init_time: AggregateTimeInitiator,
     temporality: Temporality,
     filter: AttributeSetFilter,
@@ -404,7 +400,7 @@ impl<T: Number> ExpoHistogram<T> {
 
         self.value_map
             .collect_and_reset(&mut h.data_points, |attributes, attr| {
-                let b = attr.into_inner().unwrap_or_else(|err| err.into_inner());
+                let b = attr.into_inner();
                 data::ExponentialHistogramDataPoint {
                     attributes,
                     count: b.count,
@@ -461,7 +457,8 @@ impl<T: Number> ExpoHistogram<T> {
 
         self.value_map
             .collect_readonly(&mut h.data_points, |attributes, attr| {
-                let b = attr.lock().unwrap_or_else(|err| err.into_inner());
+                let b = attr.borrow_mut();
+
                 data::ExponentialHistogramDataPoint {
                     attributes,
                     count: b.count,
@@ -703,7 +700,7 @@ mod tests {
             for v in test.values {
                 Measure::call(&h, v, &[]);
             }
-            let dp = h.value_map.no_attribute_tracker.lock().unwrap();
+            let dp = h.value_map.no_attribute_tracker.borrow_mut();
 
             assert_eq!(test.expected.max, dp.max);
             assert_eq!(test.expected.min, dp.min);

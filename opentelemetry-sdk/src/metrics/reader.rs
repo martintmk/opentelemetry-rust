@@ -1,6 +1,6 @@
 //! Interfaces for reading and producing metrics
-use std::{fmt, sync::Weak};
-
+use std::{fmt};
+use std::rc::Weak;
 use crate::{error::OTelSdkResult, metrics::MetricResult};
 
 use super::{data::ResourceMetrics, pipeline::Pipeline, InstrumentKind, Temporality};
@@ -19,7 +19,7 @@ use super::{data::ResourceMetrics, pipeline::Pipeline, InstrumentKind, Temporali
 ///
 /// Pull-based exporters will typically implement `MetricReader` themselves,
 /// since they read on demand.
-pub trait MetricReader: fmt::Debug + Send + Sync + 'static {
+pub trait MetricReader: fmt::Debug + 'static {
     /// Registers a [MetricReader] with a [Pipeline].
     ///
     /// The pipeline argument allows the `MetricReader` to signal the sdk to collect
@@ -56,7 +56,7 @@ pub trait MetricReader: fmt::Debug + Send + Sync + 'static {
 }
 
 /// Produces metrics for a [MetricReader].
-pub(crate) trait SdkProducer: fmt::Debug + Send + Sync {
+pub(crate) trait SdkProducer: fmt::Debug{
     /// Returns aggregated metrics from a single collection.
     fn produce(&self, rm: &mut ResourceMetrics) -> MetricResult<()>;
 }

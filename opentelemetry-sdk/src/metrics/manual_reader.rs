@@ -1,8 +1,8 @@
 use std::{
     fmt,
-    sync::{Mutex, Weak},
 };
-
+use std::cell::RefCell;
+use std::rc::Weak;
 use opentelemetry::otel_debug;
 
 use crate::{
@@ -30,7 +30,7 @@ use super::{
 /// # drop(reader)
 /// ```
 pub struct ManualReader {
-    inner: Mutex<ManualReaderInner>,
+    inner: RefCell<ManualReaderInner>,
     temporality: Temporality,
 }
 
@@ -61,7 +61,7 @@ impl ManualReader {
     /// A [MetricReader] which is directly called to collect metrics.
     pub(crate) fn new(temporality: Temporality) -> Self {
         ManualReader {
-            inner: Mutex::new(ManualReaderInner {
+            inner: RefCell::new(ManualReaderInner {
                 sdk_producer: None,
                 is_shutdown: false,
             }),
@@ -74,16 +74,16 @@ impl MetricReader for ManualReader {
     ///  Register a pipeline which enables the caller to read metrics from the SDK
     ///  on demand.
     fn register_pipeline(&self, pipeline: Weak<Pipeline>) {
-        let _ = self.inner.lock().map(|mut inner| {
-            // Only register once. If producer is already set, do nothing.
-            if inner.sdk_producer.is_none() {
-                inner.sdk_producer = Some(pipeline);
-            } else {
-                otel_debug!(
-                    name: "ManualReader.DuplicateRegistration",
-                    message = "The pipeline is already registered to the Reader. Registering pipeline multiple times is not allowed.");
-            }
-        });
+        let mut inner = self.inner.borrow_mut();
+
+        // Only register once. If producer is already set, do nothing.
+        if inner.sdk_producer.is_none() {
+            inner.sdk_producer = Some(pipeline);
+        } else {
+            otel_debug!(
+                name: "ManualReader.DuplicateRegistration",
+                message = "The pipeline is already registered to the Reader. Registering pipeline multiple times is not allowed.");
+        }
     }
 
     /// Gathers all metrics from the SDK, calling any
@@ -91,7 +91,8 @@ impl MetricReader for ManualReader {
     ///
     /// Returns an error if called after shutdown.
     fn collect(&self, rm: &mut ResourceMetrics) -> MetricResult<()> {
-        let inner = self.inner.lock()?;
+        let inner = self.inner.borrow_mut();
+
         match &inner.sdk_producer.as_ref().and_then(|w| w.upgrade()) {
             Some(producer) => producer.produce(rm)?,
             None => {
@@ -113,8 +114,7 @@ impl MetricReader for ManualReader {
     fn shutdown(&self) -> OTelSdkResult {
         let mut inner = self
             .inner
-            .lock()
-            .map_err(|e| OTelSdkError::InternalFailure(format!("Failed to acquire lock: {}", e)))?;
+            .borrow_mut();
 
         // Any future call to collect will now return an error.
         inner.sdk_producer = None;

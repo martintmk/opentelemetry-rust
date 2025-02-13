@@ -6,7 +6,8 @@ use crate::metrics::Temporality;
 use super::aggregate::{AggregateTimeInitiator, AttributeSetFilter};
 use super::{last_value::Assign, AtomicTracker, Number, ValueMap};
 use super::{ComputeAggregation, Measure};
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap};
+use std::cell::RefCell;
 
 /// Summarizes a set of pre-computed sums as their arithmetic sum.
 pub(crate) struct PrecomputedSum<T: Number> {
@@ -15,7 +16,7 @@ pub(crate) struct PrecomputedSum<T: Number> {
     temporality: Temporality,
     filter: AttributeSetFilter,
     monotonic: bool,
-    reported: Mutex<HashMap<Vec<KeyValue>, T>>,
+    reported: RefCell<HashMap<Vec<KeyValue>, T>>,
 }
 
 impl<T: Number> PrecomputedSum<T> {
@@ -30,7 +31,7 @@ impl<T: Number> PrecomputedSum<T> {
             temporality,
             filter,
             monotonic,
-            reported: Mutex::new(Default::default()),
+            reported: RefCell::new(Default::default()),
         }
     }
 
@@ -58,10 +59,7 @@ impl<T: Number> PrecomputedSum<T> {
         s_data.temporality = Temporality::Delta;
         s_data.is_monotonic = self.monotonic;
 
-        let mut reported = match self.reported.lock() {
-            Ok(r) => r,
-            Err(_) => return (0, None),
-        };
+        let mut reported = self.reported.borrow_mut();
         let mut new_reported = HashMap::with_capacity(reported.len());
 
         self.value_map

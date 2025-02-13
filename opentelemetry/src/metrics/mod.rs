@@ -1,7 +1,7 @@
 //! # OpenTelemetry Metrics API
 
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::rc::Rc;
 
 mod instruments;
 mod meter;
@@ -58,12 +58,12 @@ impl Eq for KeyValue {}
 pub trait InstrumentProvider {
     /// creates an instrument for recording increasing values.
     fn u64_counter(&self, _builder: InstrumentBuilder<'_, Counter<u64>>) -> Counter<u64> {
-        Counter::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Counter::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording increasing values.
     fn f64_counter(&self, _builder: InstrumentBuilder<'_, Counter<f64>>) -> Counter<f64> {
-        Counter::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Counter::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording increasing values via callback.
@@ -87,7 +87,7 @@ pub trait InstrumentProvider {
         &self,
         _builder: InstrumentBuilder<'_, UpDownCounter<i64>>,
     ) -> UpDownCounter<i64> {
-        UpDownCounter::new(Arc::new(noop::NoopSyncInstrument::new()))
+        UpDownCounter::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording changes of a value.
@@ -95,7 +95,7 @@ pub trait InstrumentProvider {
         &self,
         _builder: InstrumentBuilder<'_, UpDownCounter<f64>>,
     ) -> UpDownCounter<f64> {
-        UpDownCounter::new(Arc::new(noop::NoopSyncInstrument::new()))
+        UpDownCounter::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording changes of a value.
@@ -116,17 +116,17 @@ pub trait InstrumentProvider {
 
     /// creates an instrument for recording independent values.
     fn u64_gauge(&self, _builder: InstrumentBuilder<'_, Gauge<u64>>) -> Gauge<u64> {
-        Gauge::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Gauge::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording independent values.
     fn f64_gauge(&self, _builder: InstrumentBuilder<'_, Gauge<f64>>) -> Gauge<f64> {
-        Gauge::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Gauge::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording independent values.
     fn i64_gauge(&self, _builder: InstrumentBuilder<'_, Gauge<i64>>) -> Gauge<i64> {
-        Gauge::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Gauge::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording the current value via callback.
@@ -155,12 +155,12 @@ pub trait InstrumentProvider {
 
     /// creates an instrument for recording a distribution of values.
     fn f64_histogram(&self, _builder: HistogramBuilder<'_, Histogram<f64>>) -> Histogram<f64> {
-        Histogram::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Histogram::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 
     /// creates an instrument for recording a distribution of values.
     fn u64_histogram(&self, _builder: HistogramBuilder<'_, Histogram<u64>>) -> Histogram<u64> {
-        Histogram::new(Arc::new(noop::NoopSyncInstrument::new()))
+        Histogram::new(Rc::new(noop::NoopSyncInstrument::new()))
     }
 }
 

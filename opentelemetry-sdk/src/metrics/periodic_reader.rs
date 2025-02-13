@@ -2,12 +2,12 @@ use std::{
     env, fmt,
     sync::{
         mpsc::{self, Receiver, Sender},
-        Arc, Mutex, Weak,
     },
     thread,
     time::{Duration, Instant},
 };
-
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 use opentelemetry::{otel_debug, otel_error, otel_info, otel_warn};
 
 use crate::{
@@ -126,7 +126,7 @@ where
 /// ```
 #[derive(Clone)]
 pub struct PeriodicReader {
-    inner: Arc<PeriodicReaderInner>,
+    inner: Rc<PeriodicReaderInner>,
 }
 
 impl PeriodicReader {
@@ -144,188 +144,15 @@ impl PeriodicReader {
     {
         let (message_sender, message_receiver): (Sender<Message>, Receiver<Message>) =
             mpsc::channel();
-        let exporter_arc = Arc::new(exporter);
-        let reader = PeriodicReader {
-            inner: Arc::new(PeriodicReaderInner {
+        let exporter_arc = Rc::new(exporter);
+
+        PeriodicReader {
+            inner: Rc::new(PeriodicReaderInner {
                 message_sender,
-                producer: Mutex::new(None),
+                producer: RefCell::new(None),
                 exporter: exporter_arc.clone(),
             }),
-        };
-        let cloned_reader = reader.clone();
-
-        let result_thread_creation = thread::Builder::new()
-            .name("OpenTelemetry.Metrics.PeriodicReader".to_string())
-            .spawn(move || {
-                let mut interval_start = Instant::now();
-                let mut remaining_interval = interval;
-                otel_info!(
-                    name: "PeriodReaderThreadStarted",
-                    interval_in_millisecs = interval.as_millis(),
-                );
-                loop {
-                    otel_debug!(
-                        name: "PeriodReaderThreadLoopAlive", message = "Next export will happen after interval, unless flush or shutdown is triggered.", interval_in_millisecs = remaining_interval.as_millis()
-                    );
-                    match message_receiver.recv_timeout(remaining_interval) {
-                        Ok(Message::Flush(response_sender)) => {
-                            otel_debug!(
-                                name: "PeriodReaderThreadExportingDueToFlush"
-                            );
-                            let export_result = cloned_reader.collect_and_export();
-                            otel_debug!(
-                                name: "PeriodReaderInvokedExport",
-                                export_result = format!("{:?}", export_result)
-                            );
-
-                            // If response_sender is disconnected, we can't send
-                            // the result back. This occurs when the thread that
-                            // initiated flush gave up due to timeout.
-                            // Gracefully handle that with internal logs. The
-                            // internal errors are of Info level, as this is
-                            // useful for user to know whether the flush was
-                            // successful or not, when flush() itself merely
-                            // tells that it timed out.
-
-                            if export_result.is_err() {
-                                if response_sender.send(false).is_err() {
-                                    otel_info!(
-                                        name: "PeriodReader.Flush.ResponseSendError",
-                                        message = "PeriodicReader's flush has failed, but unable to send this info back to caller. 
-                                        This occurs when the caller has timed out waiting for the response. If you see this occuring frequently, consider increasing the flush timeout."
-                                    );
-                                }
-                            } else if response_sender.send(true).is_err() {
-                                otel_info!(
-                                    name: "PeriodReader.Flush.ResponseSendError",
-                                    message = "PeriodicReader's flush has completed successfully, but unable to send this info back to caller. 
-                                    This occurs when the caller has timed out waiting for the response. If you see this occuring frequently, consider increasing the flush timeout."
-                                );
-                            }
-
-                            // Adjust the remaining interval after the flush
-                            let elapsed = interval_start.elapsed();
-                            if elapsed < interval {
-                                remaining_interval = interval - elapsed;
-                                otel_debug!(
-                                    name: "PeriodReaderThreadAdjustingRemainingIntervalAfterFlush",
-                                    remaining_interval = remaining_interval.as_secs()
-                                );
-                            } else {
-                                otel_debug!(
-                                    name: "PeriodReaderThreadAdjustingExportAfterFlush",
-                                );
-                                // Reset the interval if the flush finishes after the expected export time
-                                // effectively missing the normal export.
-                                // Should we attempt to do the missed export immediately?
-                                // Or do the next export at the next interval?
-                                // Currently this attempts the next export immediately.
-                                // i.e calling Flush can affect the regularity.
-                                interval_start = Instant::now();
-                                remaining_interval = Duration::ZERO;
-                            }
-                        }
-                        Ok(Message::Shutdown(response_sender)) => {
-                            // Perform final export and break out of loop and exit the thread
-                            otel_debug!(name: "PeriodReaderThreadExportingDueToShutdown");
-                            let export_result = cloned_reader.collect_and_export();
-                            otel_debug!(
-                                name: "PeriodReaderInvokedExport",
-                                export_result = format!("{:?}", export_result)
-                            );
-                            let shutdown_result = exporter_arc.shutdown();
-                            otel_debug!(
-                                name: "PeriodReaderInvokedExporterShutdown",
-                                shutdown_result = format!("{:?}", shutdown_result)
-                            );
-
-                            // If response_sender is disconnected, we can't send
-                            // the result back. This occurs when the thread that
-                            // initiated shutdown gave up due to timeout.
-                            // Gracefully handle that with internal logs and
-                            // continue with shutdown (i.e exit thread) The
-                            // internal errors are of Info level, as this is
-                            // useful for user to know whether the shutdown was
-                            // successful or not, when shutdown() itself merely
-                            // tells that it timed out.
-                            if export_result.is_err() || shutdown_result.is_err() {
-                                if response_sender.send(false).is_err() {
-                                    otel_info!(
-                                        name: "PeriodReaderThreadShutdown.ResponseSendError",
-                                        message = "PeriodicReader's shutdown has failed, but unable to send this info back to caller. 
-                                        This occurs when the caller has timed out waiting for the response. If you see this occuring frequently, consider increasing the shutdown timeout."
-                                    );
-                                }
-                            } else if response_sender.send(true).is_err() {
-                                otel_info!(
-                                    name: "PeriodReaderThreadShutdown.ResponseSendError",
-                                    message = "PeriodicReader completed its shutdown, but unable to send this info back to caller. 
-                                    This occurs when the caller has timed out waiting for the response. If you see this occuring frequently, consider increasing the shutdown timeout."
-                                );
-                            }
-
-                            otel_debug!(
-                                name: "PeriodReaderThreadExiting",
-                                reason = "ShutdownRequested"
-                            );
-                            break;
-                        }
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            let export_start = Instant::now();
-                            otel_debug!(
-                                name: "PeriodReaderThreadExportingDueToTimer"
-                            );
-
-                            let export_result = cloned_reader.collect_and_export();
-                            otel_debug!(
-                                name: "PeriodReaderInvokedExport",
-                                export_result = format!("{:?}", export_result)
-                            );
-
-                            let time_taken_for_export = export_start.elapsed();
-                            if time_taken_for_export > interval {
-                                otel_debug!(
-                                    name: "PeriodReaderThreadExportTookLongerThanInterval"
-                                );
-                                // if export took longer than interval, do the
-                                // next export immediately.
-                                // Alternatively, we could skip the next export
-                                // and wait for the next interval.
-                                // Or enforce that export timeout is less than interval.
-                                // What is the desired behavior?
-                                interval_start = Instant::now();
-                                remaining_interval = Duration::ZERO;
-                            } else {
-                                remaining_interval = interval - time_taken_for_export;
-                                interval_start = Instant::now();
-                            }
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => {
-                            // Channel disconnected, only thing to do is break
-                            // out (i.e exit the thread)
-                            otel_debug!(
-                                name: "PeriodReaderThreadExiting",
-                                reason = "MessageSenderDisconnected"
-                            );
-                            break;
-                        }
-                    }
-                }
-                otel_info!(
-                    name: "PeriodReaderThreadStopped"
-                );
-            });
-
-        // TODO: Should we fail-fast here and bubble up the error to user?
-        #[allow(unused_variables)]
-        if let Err(e) = result_thread_creation {
-            otel_error!(
-                name: "PeriodReaderThreadStartError",
-                message = "Failed to start PeriodicReader thread. Metrics will not be exported.",
-                error = format!("{:?}", e)
-            );
         }
-        reader
     }
 
     fn collect_and_export(&self) -> OTelSdkResult {
@@ -340,14 +167,14 @@ impl fmt::Debug for PeriodicReader {
 }
 
 struct PeriodicReaderInner {
-    exporter: Arc<dyn PushMetricExporter>,
+    exporter: Rc<dyn PushMetricExporter>,
     message_sender: mpsc::Sender<Message>,
-    producer: Mutex<Option<Weak<dyn SdkProducer>>>,
+    producer: RefCell<Option<Weak<dyn SdkProducer>>>,
 }
 
 impl PeriodicReaderInner {
     fn register_pipeline(&self, producer: Weak<dyn SdkProducer>) {
-        let mut inner = self.producer.lock().expect("lock poisoned");
+        let mut inner = self.producer.borrow_mut();
         *inner = Some(producer);
     }
 
@@ -356,7 +183,8 @@ impl PeriodicReaderInner {
     }
 
     fn collect(&self, rm: &mut ResourceMetrics) -> MetricResult<()> {
-        let producer = self.producer.lock().expect("lock poisoned");
+        let producer = self.producer.borrow_mut();
+
         if let Some(p) = producer.as_ref() {
             p.upgrade()
                 .ok_or_else(|| MetricError::Other("pipeline is dropped".into()))?

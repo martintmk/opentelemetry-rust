@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::mem::replace;
 use std::ops::DerefMut;
 use std::sync::Mutex;
@@ -14,7 +15,7 @@ use super::Measure;
 use super::ValueMap;
 use super::{Aggregator, Number};
 
-impl<T> Aggregator for Mutex<Buckets<T>>
+impl<T> Aggregator for RefCell<Buckets<T>>
 where
     T: Number,
 {
@@ -23,7 +24,7 @@ where
     type PreComputedValue = (T, usize);
 
     fn update(&self, (value, index): (T, usize)) {
-        let mut buckets = self.lock().unwrap_or_else(|err| err.into_inner());
+        let mut buckets = self.borrow_mut();
 
         buckets.total += value;
         buckets.count += 1;
@@ -37,12 +38,12 @@ where
     }
 
     fn create(count: &usize) -> Self {
-        Mutex::new(Buckets::<T>::new(*count))
+        RefCell::new(Buckets::<T>::new(*count))
     }
 
     fn clone_and_reset(&self, count: &usize) -> Self {
-        let mut current = self.lock().unwrap_or_else(|err| err.into_inner());
-        Mutex::new(replace(current.deref_mut(), Buckets::new(*count)))
+        let mut current = self.borrow_mut();
+        RefCell::new(replace(current.deref_mut(), Buckets::new(*count)))
     }
 }
 
@@ -70,7 +71,7 @@ impl<T: Number> Buckets<T> {
 /// Summarizes a set of measurements as a histogram with explicitly defined
 /// buckets.
 pub(crate) struct Histogram<T: Number> {
-    value_map: ValueMap<Mutex<Buckets<T>>>,
+    value_map: ValueMap<RefCell<Buckets<T>>>,
     init_time: AggregateTimeInitiator,
     temporality: Temporality,
     filter: AttributeSetFilter,
@@ -128,7 +129,7 @@ impl<T: Number> Histogram<T> {
 
         self.value_map
             .collect_and_reset(&mut h.data_points, |attributes, aggr| {
-                let b = aggr.into_inner().unwrap_or_else(|err| err.into_inner());
+                let b = aggr.into_inner();
                 HistogramDataPoint {
                     attributes,
                     count: b.count,
@@ -179,7 +180,8 @@ impl<T: Number> Histogram<T> {
 
         self.value_map
             .collect_readonly(&mut h.data_points, |attributes, aggr| {
-                let b = aggr.lock().unwrap_or_else(|err| err.into_inner());
+                let b = aggr.borrow_mut();
+
                 HistogramDataPoint {
                     attributes,
                     count: b.count,

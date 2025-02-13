@@ -24,14 +24,10 @@ use std::cell::RefCell;
 mod throughput;
 
 lazy_static! {
-    static ref PROVIDER: SdkMeterProvider = SdkMeterProvider::builder()
-        .with_reader(ManualReader::builder().build())
-        .build();
     static ref ATTRIBUTE_VALUES: [&'static str; 10] = [
         "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9",
         "value10"
     ];
-    static ref HISTOGRAM: Histogram<u64> = PROVIDER.meter("test").u64_histogram("hello").build();
 }
 
 thread_local! {
@@ -46,15 +42,9 @@ thread_local! {
 }
 
 fn main() {
-    match std::env::args().find(|arg| arg == "--per-thread") {
-        None => throughput::test_throughput(test_histogram_shared),
-        Some(_) => throughput::test_throughput(test_histogram_per_thread),
-    }
+    throughput::test_throughput(test_histogram_per_thread);
 }
 
-fn test_histogram_shared() {
-    test_histogram(&HISTOGRAM);
-}
 
 fn test_histogram_per_thread() {
     HISTOGRAM_PER_THREAD.with(|h| test_histogram(h));

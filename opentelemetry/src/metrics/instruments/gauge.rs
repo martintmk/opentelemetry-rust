@@ -1,5 +1,6 @@
 use crate::KeyValue;
 use core::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use super::SyncInstrument;
@@ -11,7 +12,7 @@ use super::SyncInstrument;
 /// duplicate [`Gauge`]s for the same metric could lower SDK performance.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Gauge<T>(Arc<dyn SyncInstrument<T> + Send + Sync>);
+pub struct Gauge<T>(Rc<dyn SyncInstrument<T>>);
 
 impl<T> fmt::Debug for Gauge<T>
 where
@@ -24,7 +25,7 @@ where
 
 impl<T> Gauge<T> {
     /// Create a new gauge.
-    pub fn new(inner: Arc<dyn SyncInstrument<T> + Send + Sync>) -> Self {
+    pub fn new(inner: Rc<dyn SyncInstrument<T>>) -> Self {
         Gauge(inner)
     }
 

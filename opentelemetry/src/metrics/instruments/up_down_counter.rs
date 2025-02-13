@@ -1,5 +1,6 @@
 use crate::KeyValue;
 use core::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use super::SyncInstrument;
@@ -11,7 +12,7 @@ use super::SyncInstrument;
 /// duplicate [`UpDownCounter`]s for the same metric could lower SDK performance.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct UpDownCounter<T>(Arc<dyn SyncInstrument<T> + Send + Sync>);
+pub struct UpDownCounter<T>(Rc<dyn SyncInstrument<T>>);
 
 impl<T> fmt::Debug for UpDownCounter<T>
 where
@@ -27,7 +28,7 @@ where
 
 impl<T> UpDownCounter<T> {
     /// Create a new up down counter.
-    pub fn new(inner: Arc<dyn SyncInstrument<T> + Send + Sync>) -> Self {
+    pub fn new(inner: Rc<dyn SyncInstrument<T>>) -> Self {
         UpDownCounter(inner)
     }
 
